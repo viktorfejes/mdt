@@ -68,7 +68,7 @@ typedef enum {
     _EOF
 } element_type_t;
 
-const char* element_type_str[] = {
+const char* element_str[] = {
     "ELEMENT_HEADER",
     "ELEMENT_PARAGRAPH",
     "ELEMENT_LINE_BREAK",
@@ -92,10 +92,18 @@ const char* element_type_str[] = {
 
 #define INITIAL_CAPACITY 128
 
+typedef struct lexer {
+    const char* file_path;
+    char* source;
+    u64 cur;
+    u64 line_num;
+    u64 char_num;
+} lexer_t;
+
 typedef struct token {
     token_type_t type;
     char* value;
-    u8 level;
+    u16 level;
     u64 line;
     u64 character;
 } token_t;
@@ -109,16 +117,8 @@ typedef struct token_array {
 typedef struct element {
     element_type_t type;
     char* value;
-    u8 depth; // like h1, h2, h3... (or it could help with nesting?)
+    u16 depth; // like h1, h2, h3... (or it could help with nesting?)
 } element_t;
-
-typedef struct lexer {
-    const char* file_path;
-    char* source;
-    u64 cur;
-    u64 line_num;
-    u64 char_num;
-} lexer_t;
 
 typedef struct node {
     element_t element;
@@ -240,14 +240,14 @@ token_t* next_token(lexer_t* lexer) {
         // Store in case we need to recover
         u64 cursor = lexer->cur;
         
-        u8 header_level = 0;
+        u16 header_level = 0;
         while (lexer->source[lexer->cur] == '#') {
             lexer->cur++;
             header_level++;
         }
 
         // If next character is not a space after #,
-        // we let the function continue.
+        // we restore and won't return token.
         if (lexer->source[lexer->cur] != ' ') {
             lexer->cur = cursor;
         } else {
@@ -450,91 +450,132 @@ token_array_t tokenize(lexer_t* lexer) {
     return token_array;
 }
 
-// node_t* create_node(token_type_t token_type, char* token_value) {
-//     node_t* node = malloc(sizeof(node_t));
-//     node->token_type = token_type;
-//     node->value = token_value ? strdup(token_value) : NULL;
-//     node->next = NULL;
-//     node->children = NULL;
+node_t* create_node(element_type_t element_type, u16 element_level, char* element_value) {
+    node_t* node = malloc(sizeof(node_t));
 
-//     return node;
-// }
+    node->element.type = element_type;
+    node->element.value = element_value ? str_dup(element_value) : NULL;
+    node->element.depth = element_level;
 
-// void add_child(node_t* parent, node_t* child) {
-//     if (!parent->children) {
-//         parent->children = child;
-//     } else {
-//         node_t* sibling = parent->children;
-//         while (sibling->next) {
-//             sibling = sibling->next;
-//         }
-//         sibling->next = child;
-//     }
-// }
+    // Set children to null
+    node->next = NULL;
+    node->children = NULL;
 
-// char* read_while(b8 (*predicate)(u8), lexer_t* lexer) {
-//     u64 start = lexer->cur;
-//     while (predicate(lexer->source[lexer->cur])) {
-//         lexer->cur++;
-//     }
-//     u64 length = lexer->cur - start;
-//     char* result = malloc(length + 1);
-//     strncpy(result, &lexer->source[start], length);
-//     result[length] = '\0';
+    return node;
+}
 
-//     return result;
-// }
+void add_child(node_t* parent, node_t* child) {
+    if (!parent->children) {
+        parent->children = child;
+    } else {
+        node_t* sibling = parent->children;
+        while (sibling->next) {
+            sibling = sibling->next;
+        }
+        sibling->next = child;
+    }
+}
 
-// b8 is_not_newline_or_eof(u8 c) {
-//     return c != '\n' && c != '\0';
-// }
+node_t* build_ast(token_array_t* tokens) {
+    // Create the root node
+    node_t* root_node = create_node(_ROOT, 0, NULL);
 
-// node_t* parse_md(lexer_t* lexer) {
-//     node_t* root = malloc(sizeof(node_t));
-//     root->token_type = TOKEN_ROOT;
-//     root->value = NULL;
-//     root->next = NULL;
-//     root->children = NULL;
-    
-//     token_t* token = NULL;
-//     node_t* ul_root = NULL;
-//     while ((token = next_token(lexer))->type != TOKEN_EOF) {
-//         printf("Token Type: %s, Value: %s\n", token_type_str[token->type], token->value);
+    // Let's loop through all the tokens
+    for (u64 i = 0; i < tokens->count; ++i) {
+        
+        // Create header node
+        if (tokens->tokens[i].type == TOKEN_HEADER) {
+            
+            // Create header node.
+            node_t* header_node = create_node(
+                ELEMENT_HEADER,
+                tokens->tokens[i].level,
+                NULL);
 
-//         switch (token->type) {
-//             case TOKEN_HEADER1:
-//             case TOKEN_HEADER2:
-//             case TOKEN_HEADER3:
-//             case TOKEN_HEADER4:
-//             case TOKEN_HEADER5:
-//             case TOKEN_HEADER6:
-//             case TOKEN_TEXT: {
-//                 ul_root = NULL;
-//                 node_t* child = create_node(token->type, token->value);
-//                 add_child(root, child);
-//             } break;
+            // Make header child of root
+            add_child(root_node, header_node);
 
-//             case TOKEN_UL: {
-//                 if (ul_root == NULL) {
-//                     ul_root = create_node(TOKEN_UL_ROOT, NULL);
-//                     add_child(root, ul_root);
-//                 }
+            // Look for inner text
+            if(tokens->tokens[i + 1].type == TOKEN_TEXT) {
+                // Increment i because we consume next token
+                i++;
 
-//                 node_t* ul_item = create_node(token->type, token->value);
-//                 add_child(ul_root, ul_item);
-//             } break;
+                // Create inner text node and make it the header's child
+                node_t* inner_text_node = create_node(
+                    ELEMENT_INNER_TEXT,
+                    0,
+                    tokens->tokens[i].value
+                );
+                add_child(header_node, inner_text_node);
+            }
 
-//             default:
-//             break;
-//         }
+            continue;
+        }
 
-//         free(token->value);
-//         free(token);
-//     }
-//     free(token); // free EOF token
-    
-//     return root;
-// }
+        // ... at the end we capture the simple text as paragraph
+        if (tokens->tokens[i].type == TOKEN_TEXT) {
+            // NOTE: to create paragraph we need to consume text and other
+            // tokens until we hit a double line break... right?
+
+            // TODO: bold, italic, links...etc
+
+            // Creating a paragraph element to hold inner text and others...
+            node_t* paragraph = create_node(
+                ELEMENT_PARAGRAPH,
+                0,
+                NULL
+            );
+
+            // Make root the parent
+            add_child(root_node, paragraph);
+
+            // Add TOKEN_TEXT as inner_text
+            node_t* inner_text = create_node(
+                ELEMENT_INNER_TEXT,
+                0,
+                tokens->tokens[i].value
+            );
+            add_child(paragraph, inner_text);
+        }
+
+    }
+
+    // Create the end of file node
+    node_t* eof_node = create_node(_EOF, 0, NULL);
+    add_child(root_node, eof_node);
+
+    return root_node;
+}
+
+void print_ast(node_t* node, int indent) {
+    if (node == NULL) {
+        return;
+    }
+
+    // Print indent
+    for (int i = 0; i < indent; ++i) {
+        printf("    ");
+    }
+
+    // Print current node
+    printf("|- %s (%d): %s\n", element_str[node->element.type], node->element.depth, node->element.value);
+
+    // Recursively print children
+    node_t* child = node->children;
+    while (child) {
+        print_ast(child, indent + 1);
+        child = child->next;
+    }
+
+    // Recursively print siblings of root
+    if (indent == 0) {
+        node_t* sibling = node->next;
+        while (sibling) {
+            print_ast(sibling, indent);
+            sibling = sibling->next;
+        }
+    }
+}
 
 // char* slugify(char* input) {
 //     // Hello, World! -> hello-world
@@ -677,19 +718,10 @@ int main(void) {
 
     printf("Token amount by token_array: %lld\n", token_array.count);
     printf("Accessing 2nd token:\n");
-    printf("Token type: %s, Token value: %s\n", token_str[token_array.tokens[1].type], token_array.tokens[1].value);
+    printf("Token type: %s, Token level: %d\n", token_str[token_array.tokens[1].type], token_array.tokens[1].level);
 
-    // // Create new lexer
-    // lexer_t lexer;
-    // if (new_lexer(&lexer, resume_path) != 0) {
-    //     fprintf(stderr, "Couldn't create a new lexer for file: %s\n", resume_path);
-    // }
-
-    // // Parse source
-    // node_t* root = parse_md(&lexer);
-    // if (root == NULL) {
-    //     fprintf(stderr, "Couldn't parse markdown file.\n");
-    // }
+    node_t* root = build_ast(&token_array);
+    print_ast(root, 0);
 
     // // Print out the Tree
     // node_t* current = root;
