@@ -8,14 +8,12 @@
 
 typedef enum token_type {
     TOKEN_HEADER,
+    TOKEN_TEXT,
     TOKEN_DASH,
     TOKEN_PLUS,
     TOKEN_NUMBER,
     TOKEN_STAR,
-    TOKEN_STAR_OPEN,
-    TOKEN_STAR_CLOSE,
-    TOKEN_UNDERSCORE_OPEN,
-    TOKEN_UNDERSCORE_CLOSE,
+    TOKEN_UNDERSCORE,
     TOKEN_BIGGER_THAN,
     TOKEN_PAREN_OPEN,
     TOKEN_PAREN_CLOSE,
@@ -27,6 +25,26 @@ typedef enum token_type {
     TOKEN_ESCAPE,
     TOKEN_EOF,
 } token_type_t;
+
+const char* token_str[] = {
+    "TOKEN_HEADER",
+    "TOKEN_TEXT",
+    "TOKEN_DASH",
+    "TOKEN_PLUS",
+    "TOKEN_NUMBER",
+    "TOKEN_STAR",
+    "TOKEN_UNDERSCORE",
+    "TOKEN_BIGGER_THAN",
+    "TOKEN_PAREN_OPEN",
+    "TOKEN_PAREN_CLOSE",
+    "TOKEN_SQBR_OPEN",
+    "TOKEN_SQBR_CLOSE",
+    "TOKEN_BACKTICKS_OPEN",
+    "TOKEN_BACKTICKS_CLOSE",
+    "TOKEN_LINE_BREAK",
+    "TOKEN_ESCAPE",
+    "TOKEN_EOF",
+};
 
 typedef enum {
     ELEMENT_HEADER,
@@ -167,6 +185,38 @@ i8 new_lexer(lexer_t* lexer, const char* src_path) {
     return 0;
 }
 
+char* read_while(b8 (*predicate)(u8), lexer_t* lexer) {
+    u64 start = lexer->cur;
+    while (predicate(lexer->source[lexer->cur])) {
+        lexer->char_num++;
+        lexer->cur++;
+    }
+    u64 length = lexer->cur - start;
+    char* result = malloc(length + 1);
+    str_ncpy(result, &lexer->source[start], length);
+    result[length] = '\0';
+
+    return result;
+}
+
+b8 is_not_newline_or_eof(u8 c) {
+    return c != '\n' && c != '\0';
+}
+
+// All the possible tokens that can appear inline
+b8 is_not_inline_token(u8 c) {
+    // Emphasis
+    b8 em = c != '*' && c != '_';
+    // Line break or EOF
+    b8 neof = c != '\n' && c != '\0';
+    // Links or images
+    b8 li = c != '[';
+    // Backticks and escape
+    b8 bt = c != '`' && c != '\\';
+
+    return em && neof && li && bt;
+}
+
 token_t* next_token(lexer_t* lexer) {
     // Ignore whitespace and tab
     while (lexer->source[lexer->cur] == ' ' || lexer->source[lexer->cur] == '\t') {
@@ -176,7 +226,6 @@ token_t* next_token(lexer_t* lexer) {
 
     // EOF
     if (lexer->source[lexer->cur] == 0) {
-
         token_t* token = malloc(sizeof(token_t));
         token->type = TOKEN_EOF;
         token->value = NULL;
@@ -218,7 +267,6 @@ token_t* next_token(lexer_t* lexer) {
 
             return token;
         }
-
     }
 
     // Line break
@@ -306,6 +354,7 @@ token_t* next_token(lexer_t* lexer) {
         }
     }
 
+    // Open parenthesis
     if (lexer->source[lexer->cur] == '(') {
         token_t* token = malloc(sizeof(token_t));
         token->type = TOKEN_PAREN_OPEN;
@@ -318,6 +367,7 @@ token_t* next_token(lexer_t* lexer) {
         return token;
     }
 
+    // Close parenthesis
     if (lexer->source[lexer->cur] == ')') {
         token_t* token = malloc(sizeof(token_t));
         token->type = TOKEN_PAREN_CLOSE;
@@ -330,6 +380,7 @@ token_t* next_token(lexer_t* lexer) {
         return token;
     }
 
+    // Open square bracket
     if (lexer->source[lexer->cur] == '[') {
         token_t* token = malloc(sizeof(token_t));
         token->type = TOKEN_SQBR_OPEN;
@@ -342,6 +393,7 @@ token_t* next_token(lexer_t* lexer) {
         return token;
     }
 
+    // Close square bracket
     if (lexer->source[lexer->cur] == ']') {
         token_t* token = malloc(sizeof(token_t));
         token->type = TOKEN_SQBR_CLOSE;
@@ -354,72 +406,32 @@ token_t* next_token(lexer_t* lexer) {
         return token;
     }
 
+    // Inline * and _ for potential emphasis
+    if (lexer->source[lexer->cur] == '*' ||
+        lexer->source[lexer->cur] == '_') {
 
-    return NULL;
-}
-
-token_t* next_token(lexer_t* lexer) {
-    while (lexer->source[lexer->cur] == ' ' || lexer->source[lexer->cur] == '\t') {
-        lexer->cur++;
-    }
-
-    if (lexer->source[lexer->cur] == 0) {
         token_t* token = malloc(sizeof(token_t));
-        token->type = TOKEN_EOF;
+        token->type = lexer->source[lexer->cur] == '*' ? TOKEN_STAR : TOKEN_UNDERSCORE;
         token->value = NULL;
+        token->line = lexer->line_num;
+        token->character = lexer->char_num++;
 
-        return token;
-    }
-
-    if (lexer->source[lexer->cur] == '#') {
-        u8 h_lvl = 0;
-        while (lexer->source[lexer->cur] == '#') {
-            lexer->cur++;
-            h_lvl++;
-        }
-
-        while (lexer->source[lexer->cur] == ' ') {
-            lexer->cur++;
-        }
-
-        char* value = read_while(is_not_newline_or_eof, lexer);
-
-        token_t* token = malloc(sizeof(token_t));
-        // Cast level into enum
-        token->type = (token_type_t)(h_lvl - 1);
-        token->value = value;
-
-        return token;
-    }
-
-    // Unordered lists
-    // TODO: implement todo...
-    if (lexer->source[lexer->cur] == '-' && lexer->source[lexer->cur + 1] == ' ') {
-        // Skip over the hyphen and space.
-        lexer->cur += 2;
-
-        char* value = read_while(is_not_newline_or_eof, lexer);
-        token_t* token = malloc(sizeof(token_t));
-        token->type = TOKEN_UL;
-        token->value = value;
-
-        return token;
-    }
-
-    if (lexer->source[lexer->cur] == '\n') {
         lexer->cur++;
-        token_t* token = malloc(sizeof(token_t));
-        token->type = TOKEN_LINE_BREAK;
-        token->value = NULL;
 
         return token;
     }
 
-    char* text_value = read_while(is_not_newline_or_eof, lexer);
+    // Otherwise, read text until we find an inline token
+    char* text_value = read_while(is_not_inline_token, lexer);
+
     token_t* token = malloc(sizeof(token_t));
     token->type = TOKEN_TEXT;
     token->value = text_value;
+    token->line = lexer->line_num;
+    token->character = lexer->char_num;
+    // Characters are increased inside read_while...
 
+    // Return text token
     return token;
 }
 
@@ -430,11 +442,13 @@ token_array_t tokenize(lexer_t* lexer) {
         0
     };
 
-    while ((token_array.tokens = next_token(lexer))->type != TOKEN_EOF) {
+    while ((token_array.tokens[token_array.count] = *next_token(lexer)).type != TOKEN_EOF) {
+        printf("[Token type]: %s, [Token value]: %s, [Token level]: %d\n", token_str[token_array.tokens[token_array.count].type], token_array.tokens[token_array.count].value, token_array.tokens[token_array.count].level);
+        token_array.count++;
     }
+
+    return token_array;
 }
-
-
 
 // node_t* create_node(token_type_t token_type, char* token_value) {
 //     node_t* node = malloc(sizeof(node_t));
@@ -614,57 +628,56 @@ token_array_t tokenize(lexer_t* lexer) {
 //     return 0;
 // }
 
-i32 str_cmp(const char* str_a, const char* str_b) {
-    u64 i = 0;
-    while (str_a[i] != '\0' && str_b[i] != '\0') {
-        if (str_a[i] != str_b[i]) {
-            return str_a[i] - str_b[i];
-        }
-        i++;
-    }
-
-    return str_a[i] - str_b[i];
-}
-
-int main(int argc, char* argv[]) {
+int main(void) {
     
-    char* input_file = NULL;
-    char* output_file = NULL;
-    char* css_file = NULL;
-    char* title = NULL;
+    // char* input_file = NULL;
+    // char* output_file = NULL;
+    // char* css_file = NULL;
+    // char* title = NULL;
 
-    for (i64 i = 1; i < argc; ++i) {
-        printf("%s\n", argv[i]);
-        if (str_cmp(argv[i], "--output=") == 0) {
-            output_file = argv[i] + 9;
-        } else  if (str_cmp(argv[i], "-o") == 0) {
-            output_file = argv[++i];
-        } else if (str_cmp(argv[i], "--css=") == 0) {
-            css_file = argv[i] + 6;
-        } else if (str_cmp(argv[i], "-c") == 0) {
-            css_file = argv[++i];
-        } else if (str_cmp(argv[i], "--title=") == 0) {
-            title = argv[i] + 8;
-        } else if (str_cmp(argv[i], "-t") == 0) {
-            title = argv[++i];
-        } else if (argv[i][0] == '-') {
-            fprintf(stderr, "Unknown options: %s\n", argv[i]);
-        } else {
-            input_file = strdup(argv[i]);
-        }
+    // for (i64 i = 1; i < argc; ++i) {
+    //     printf("%s\n", argv[i]);
+    //     if (str_cmp(argv[i], "--output=") == 0) {
+    //         output_file = argv[i] + 9;
+    //     } else  if (str_cmp(argv[i], "-o") == 0) {
+    //         output_file = argv[++i];
+    //     } else if (str_cmp(argv[i], "--css=") == 0) {
+    //         css_file = argv[i] + 6;
+    //     } else if (str_cmp(argv[i], "-c") == 0) {
+    //         css_file = argv[++i];
+    //     } else if (str_cmp(argv[i], "--title=") == 0) {
+    //         title = argv[i] + 8;
+    //     } else if (str_cmp(argv[i], "-t") == 0) {
+    //         title = argv[++i];
+    //     } else if (argv[i][0] == '-') {
+    //         fprintf(stderr, "Unknown options: %s\n", argv[i]);
+    //     } else {
+    //         input_file = str_dup(argv[i]);
+    //     }
+    // }
+
+    // if (!output_file) {
+    //     fprintf(stderr, "Output file was not specified!\n");
+    //     return -1;
+    // }
+
+    // printf("Input file: %s\n", input_file);
+    // printf("Output file: %s\n", output_file);
+    // printf("CSS file: %s\n", css_file ? css_file : "none");
+    // printf("HTML title: %s\n", title ? title : "none");
+
+    // Create a lexer
+    const char* resume_path = "tests/resume.md";
+    lexer_t lexer;
+    if (new_lexer(&lexer, resume_path) != 0) {
+        fprintf(stderr, "Couldn't create a new lexer for file: %s\n", resume_path);
     }
 
-    if (!output_file) {
-        fprintf(stderr, "Output file was not specified!\n");
-        return -1;
-    }
+    token_array_t token_array = tokenize(&lexer);
 
-    printf("Input file: %s\n", input_file);
-    printf("Output file: %s\n", output_file);
-    printf("CSS file: %s\n", css_file ? css_file : "none");
-    printf("HTML title: %s\n", title ? title : "none");
-
-    // const char* resume_path = "tests/resume.md";
+    printf("Token amount by token_array: %lld\n", token_array.count);
+    printf("Accessing 2nd token:\n");
+    printf("Token type: %s, Token value: %s\n", token_str[token_array.tokens[1].type], token_array.tokens[1].value);
 
     // // Create new lexer
     // lexer_t lexer;

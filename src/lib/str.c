@@ -30,6 +30,14 @@ char* str_cpy(char* dst, const char* src) {
     return dst;
 }
 
+char* str_ncpy(char* dst, const char* src, u64 length) {
+    for (u64 i = 0; i < length; ++i) {
+        dst[i] = src[i];
+    }
+    dst[length] = '\0';
+    return dst;
+}
+
 char* str_dup(const char* str) {
     u64 len = str_len(str);
     char* new_str = (char*)malloc((len + 1) * sizeof(char));

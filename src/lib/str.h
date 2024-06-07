@@ -39,6 +39,17 @@ i32 str_cmp(const char* str_a, const char* str_b);
 char* str_cpy(char* dst, const char* src);
 
 /**
+ * @brief Copies the C string from `src` to `dst` of `length` size, and adds
+ * null terminator.
+ * 
+ * @param dst Pointer to the destination array where the content is to be copied.
+ * @param src C string to be copied.
+ * @param length Length of the string to copy.
+ * @return char* dst is returned. 
+ */
+char* str_ncpy(char* dst, const char* src, u64 length);
+
+/**
  * @brief Returns a pointer to a null-terminated C string, which is a duplicate
  * of the string pointed to by `str`.
  * 
