@@ -23,6 +23,7 @@ typedef enum token_type {
     TOKEN_BACKTICKS_CLOSE,
     TOKEN_LINE_BREAK,
     TOKEN_ESCAPE,
+    TOKEN_EXCLAMATION,
     TOKEN_EOF,
 } token_type_t;
 
@@ -43,6 +44,7 @@ const char* token_str[] = {
     "TOKEN_BACKTICKS_CLOSE",
     "TOKEN_LINE_BREAK",
     "TOKEN_ESCAPE",
+    "TOKEN_EXCLAMATION",
     "TOKEN_EOF",
 };
 
@@ -50,9 +52,7 @@ typedef enum {
     ELEMENT_HEADER,
     ELEMENT_PARAGRAPH,
     ELEMENT_LINE_BREAK,
-    ELEMENT_BOLD,
-    ELEMENT_ITALIC,
-    ELEMENT_UNDERLINED,
+    ELEMENT_EMPHASIS,
     ELEMENT_BLOCKQUOTE,
     ELEMENT_ORDERED_LIST,
     ELEMENT_UNORDERED_LIST,
@@ -72,9 +72,7 @@ const char* element_str[] = {
     "ELEMENT_HEADER",
     "ELEMENT_PARAGRAPH",
     "ELEMENT_LINE_BREAK",
-    "ELEMENT_BOLD",
-    "ELEMENT_ITALIC",
-    "ELEMENT_UNDERLINED",
+    "ELEMENT_EMPHASIS",
     "ELEMENT_BLOCKQUOTE",
     "ELEMENT_ORDERED_LIST",
     "ELEMENT_UNORDERED_LIST",
@@ -210,7 +208,7 @@ b8 is_not_inline_token(u8 c) {
     // Line break or EOF
     b8 neof = c != '\n' && c != '\0';
     // Links or images
-    b8 li = c != '[';
+    b8 li = c != '[' && c != ']' && c != ')';
     // Backticks and escape
     b8 bt = c != '`' && c != '\\';
 
@@ -319,7 +317,7 @@ token_t* next_token(lexer_t* lexer) {
     }
 
     // Ordered list
-    if (lexer->source[lexer->cur] >= 0 && lexer->source[lexer->cur] <= 9) {
+    if (lexer->source[lexer->cur] >= '0' && lexer->source[lexer->cur] <= '9') {
         // Store in case we need to recover
         u64 cursor = lexer->cur;
         
@@ -406,13 +404,32 @@ token_t* next_token(lexer_t* lexer) {
         return token;
     }
 
+    // Exclamation for images
+    if (lexer->source[lexer->cur] == '[' ||
+        lexer->source[lexer->cur + 1] == '!') {
+        
+        // Skip character [
+        lexer->char_num++;
+
+        token_t* token = malloc(sizeof(token_t));
+        token->type = TOKEN_EXCLAMATION;
+        token->value = "!";
+        token->line = lexer->line_num;
+        token->character = lexer->char_num++;
+
+        // Step two forward
+        lexer->cur += 2;
+
+        return token;
+    }
+
     // Inline * and _ for potential emphasis
     if (lexer->source[lexer->cur] == '*' ||
         lexer->source[lexer->cur] == '_') {
 
         token_t* token = malloc(sizeof(token_t));
         token->type = lexer->source[lexer->cur] == '*' ? TOKEN_STAR : TOKEN_UNDERSCORE;
-        token->value = NULL;
+        token->value = lexer->source[lexer->cur] == '*' ? "*" : "_";
         token->line = lexer->line_num;
         token->character = lexer->char_num++;
 
@@ -529,15 +546,121 @@ node_t* build_ast(token_array_t* tokens) {
             // Make root the parent
             add_child(root_node, paragraph);
 
-            // Add TOKEN_TEXT as inner_text
-            node_t* inner_text = create_node(
-                ELEMENT_INNER_TEXT,
-                0,
-                tokens->tokens[i].value
-            );
-            add_child(paragraph, inner_text);
-        }
+            // Iterate through all the remaining tokens,
+            // unless we encounter a token that cancels the loop.
+            while (i < tokens->count) {
 
+                if (tokens->tokens[i].type == TOKEN_TEXT) {
+                    // Add TOKEN_TEXT as inner_text
+                    node_t* inner_text = create_node(
+                        ELEMENT_INNER_TEXT,
+                        0,
+                        tokens->tokens[i].value
+                    );
+                    add_child(paragraph, inner_text);
+
+                } else if (tokens->tokens[i].type == TOKEN_LINE_BREAK) {
+                    // Line break only causes immediate exit, if it's
+                    // two consecutive ones.
+                    if (i + 1 < tokens->count && tokens->tokens[i + 1].type == TOKEN_LINE_BREAK) {
+                        // Skip the second line break
+                        i++;
+                        // Exit loop.
+                        break;
+                    }
+
+                    // If it's only a single line break, it's either an html(<br>) or
+                    // some other important element that we need to exit on.
+                    // e.g. (Header, list...)
+                    if (i + 1 < tokens->count && (tokens->tokens[i + 1].type == TOKEN_HEADER ||
+                                                tokens->tokens[i + 1].type == TOKEN_STAR ||
+                                                tokens->tokens[i + 1].type == TOKEN_UNDERSCORE ||
+                                                tokens->tokens[i + 1].type == TOKEN_NUMBER)) {
+                        // Skip the second line break
+                        i++;
+                        // Exit loop.
+                        break;
+                    }
+
+                    node_t* br = create_node(
+                        ELEMENT_LINE_BREAK,
+                        0,
+                        NULL
+                    );
+                    add_child(paragraph, br);
+
+                } else if (tokens->tokens[i].type == TOKEN_STAR ||
+                        tokens->tokens[i].type == TOKEN_UNDERSCORE) {
+
+                    // Caching `i` in case we need to restore
+                    // like when this is not a unique star or underscore
+                    // token, only text...
+                    u64 cached_i = i;
+                            
+                    // Store which token it is
+                    token_type_t token_type = tokens->tokens[i].type;
+                    // Let's count the number of tokens we need to match
+                    u8 count_before = 0;
+                    u8 count_after = 0;
+
+                    // Count stars or underscores
+                    while (tokens->tokens[i].type == token_type) {
+                        i++;
+                        count_before++;
+                    }
+
+                    // Look ahead to see if the pattern and count is correct
+                    // Let's only accept a pattern of:
+                    // (TOKEN_X * y)TOKEN_TEXT(TOKEN_X * y)
+                    if (tokens->tokens[i].type == TOKEN_TEXT &&
+                        tokens->tokens[i + 1].type == token_type) {
+                        u64 temp_i = i + 1;
+
+                        // Count tokens
+                        while (tokens->tokens[temp_i].type == token_type) {
+                            temp_i++;
+                            count_after++;
+                        }
+                    }
+
+                    // See if before/after is equal and not too many
+                    if (count_before == count_after && count_before <= 3) {
+                        // We have a good emphasis pattern!
+                        
+                        // Add opening emphasis
+                        node_t* em_open = create_node(
+                            ELEMENT_EMPHASIS,
+                            count_before,
+                            NULL
+                        );
+                        add_child(paragraph, em_open);
+
+                        // Add inner text
+                        node_t* inner_text = create_node(
+                            ELEMENT_INNER_TEXT,
+                            0,
+                            tokens->tokens[i].value
+                        );
+                        add_child(em_open, inner_text);
+
+                        i += count_after;
+
+                    } else {
+                        // Otherwise, we revert and save all of this as text...
+                        i = cached_i;
+                        node_t* txt = create_node(
+                            ELEMENT_INNER_TEXT,
+                            0,
+                            tokens->tokens[i].value
+                        );
+                        add_child(paragraph, txt);
+                    }
+
+                } else if (tokens->tokens[i].type == TOKEN_SQBR_OPEN)
+                    // This can be a link or an image
+                i++;
+            }
+        }
     }
 
     // Create the end of file node
