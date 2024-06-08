@@ -12,7 +12,7 @@ ECHO "Files:" %cFilenames%
 
 SET assembly=resumator
 SET ext=exe
-SET cFLAGS=-g3 -Wall -Wextra -Werror -fsanitize=undefined -fsanitize-trap -Wno-unused-variable
+SET cFLAGS=-g3 -Wall -Wextra -Werror -fsanitize=undefined -fsanitize-trap -Wno-unused-variable -Wno-unused-parameter
 SET iFLAGS=-Isrc/
 SET lFLAGS=-fuse-ld=lld -Wl,--pdb=
 SET DEFINES=-DDEBUG

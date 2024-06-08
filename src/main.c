@@ -656,8 +656,28 @@ node_t* build_ast(token_array_t* tokens) {
                         add_child(paragraph, txt);
                     }
 
-                } else if (tokens->tokens[i].type == TOKEN_SQBR_OPEN)
-                    // This can be a link or an image
+                }
+                // else if (tokens->tokens[i].type == TOKEN_SQBR_OPEN) {
+                //     // This can be a link or an image
+                //     // Let's check if it's a link first
+                //     // TODO: I'm not really checking a lot when looking ahead
+                //     // if we still have tokens to consume. Should probably do that...
+                //     if (i + 5 < tokens->count && tokens->tokens[i + 1].type == TOKEN_TEXT) {
+                //         // It's probably a link, or just plain text
+                //         u64 cached_i = i;
+                //         // Skip text
+                //         i += 2;
+
+                //         if (tokens->tokens[i].type == TOKEN_SQBR_CLOSE &&
+                //             tokens->tokens[i + 1].type == TOKEN_PAREN_OPEN) {
+
+                //             }
+
+                //     } else if (i + 5 < tokens->count && tokens->tokens[i + 1].type == TOKEN_EXCLAMATION) {
+                //         // It's probably an image, or just plain text...
+                //     }
+                // }
+
                 i++;
             }
         }
@@ -698,6 +718,26 @@ void print_ast(node_t* node, int indent) {
             sibling = sibling->next;
         }
     }
+}
+
+void node_to_html(node_t* node) {
+    switch (node->element.type) {
+        default:
+        break;
+    }
+}
+
+void generate_html(node_t* root, const char* out_file, const char* title, const char* css) {
+    FILE* file = fopen(out_file, "w");
+    if (!file) {
+        fprintf(stderr, "Couldn't open file for writing: %s\n", out_file);
+        return;
+    }
+
+    fprintf(file, "<html>\n<head>\n<title>%s</title>\n</head>\n<body>\n", title);
+
+    fprintf(file, "</body>\n</html>\n");
+    fclose(file);
 }
 
 // char* slugify(char* input) {
@@ -845,6 +885,8 @@ int main(void) {
 
     node_t* root = build_ast(&token_array);
     print_ast(root, 0);
+
+    generate_html(root, "tests/out.html", "Resume", "style.css");
 
     // // Print out the Tree
     // node_t* current = root;
