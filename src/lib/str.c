@@ -1,6 +1,10 @@
 #include "str.h"
 #include <stdlib.h>
 
+str_view_t string_view(const char* start, u64 length) {
+    str_view_t sv = { start, length };
+    return sv;
+}
 
 u64 str_len(const char* str) {
     u64 len = 0;
@@ -11,6 +15,19 @@ u64 str_len(const char* str) {
 i32 str_cmp(const char* str_a, const char* str_b) {
     u64 i = 0;
     while (str_a[i] != '\0' && str_b[i] != '\0') {
+        if (str_a[i] != str_b[i]) {
+            return str_a[i] - str_b[i];
+        }
+        i++;
+    }
+
+    return str_a[i] - str_b[i];
+}
+
+// TODO: needs more optimization
+i32 str_ncmp(const char* str_a, const char* str_b, u64 length) {
+    u64 i = 0;
+    while (i < length && str_a[i] != '\0' && str_b[i] != '\0') {
         if (str_a[i] != str_b[i]) {
             return str_a[i] - str_b[i];
         }

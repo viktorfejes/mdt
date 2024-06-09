@@ -12,6 +12,13 @@
 
 #include "types.h"
 
+typedef struct str_view {
+    const char* data;
+    u64 length;
+} str_view_t;
+
+str_view_t string_view(const char* start, u64 length);
+
 /**
  * @brief Function to calculate string length.
  * 
@@ -28,6 +35,8 @@ u64 str_len(const char* str);
  * @return i32 Returns a value indicating the relationship between the strings.
  */
 i32 str_cmp(const char* str_a, const char* str_b);
+
+i32 str_ncmp(const char* str_a, const char* str_b, u64 length);
 
 /**
  * @brief Copies the C string from `src` to `dst` including the null terminator.

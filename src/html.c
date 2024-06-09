@@ -105,7 +105,18 @@ void generate_html(node_t* root, const char* out_file, const char* title, const 
         return;
     }
 
-    fprintf(file, "<html>\n<head>\n<title>%s</title>\n</head>\n<body>\n", title);
+    fprintf(file,
+    "<!DOCTYPE html>\n"
+    "<html lang=\"en\">\n"
+    "<head>\n"
+    "\t<meta charset=\"UTF-8\">\n"
+    "\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
+    "\t<title>%s</title>\n"
+    "\t<link rel=\"stylesheet\" href=\"%s\">\n"
+    "</head>\n"
+    "<body>\n",
+    title ? title : "Markdown",
+    css ? css : "");
 
     node_to_html(root, file);
 
