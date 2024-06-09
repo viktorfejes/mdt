@@ -10,3 +10,5 @@ typedef long long i64;
 typedef unsigned char b8;
 #define true 1
 #define false 0
+
+#define nullptr ((void*)0)
