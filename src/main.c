@@ -1,4 +1,5 @@
 #include "types.h"
+#include "tokenizer.h"
 #include "parser.h"
 #include "html.h"
 #include "args.h"
@@ -9,21 +10,28 @@ int main(int argc, char* argv[]) {
     // Parse the command line arguments
     config_t cfg = parse_args(argc, argv);
 
-    // Create a lexer
-    lexer_t lexer;
-    if (new_lexer(&lexer, cfg.input_file) != 0) {
-        fprintf(stderr, "Couldn't create a new lexer for file: %s\n", cfg.input_file);
+    // Start tokenizer
+    tokenizer_t tokenizer;
+    if (!tokenizer_init(&tokenizer, cfg.input_file)) {
+        fprintf(stderr, "Failed to initialize tokenizer!\n");
+        return -1;
     }
 
-    // Tokenize
-    token_array_t token_array = tokenize(&lexer);
+    while (next_token(&tokenizer));
+    print_tokens(&tokenizer);
 
-    // Build AST
-    node_t* root = build_ast(&token_array);
-    print_ast(root, 0);
+    // Parse and build the AST!
+    node_t* root = parse_md(&tokenizer);
+    print_nodes(root, 0);
 
-    // Generate HTML from AST
+    // Generate html
     generate_html(root, cfg.output_file, cfg.title, cfg.css);
+
+    // Success!
+    printf("All is good.\n");
+
+    // Shutdown tokenizer
+    tokenizer_shutdown(&tokenizer);
 
     return 0;
 }

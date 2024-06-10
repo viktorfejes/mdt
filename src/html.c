@@ -1,6 +1,6 @@
 #include "html.h"
 
-#include "lib/str.h"
+#include <stdio.h>
 #include <stdlib.h>
 
 void node_to_html(node_t* node, FILE* file) {
@@ -8,8 +8,8 @@ void node_to_html(node_t* node, FILE* file) {
         return;
     }
 
-    switch (node->element.type) {
-        case _ROOT: {
+    switch (node->type) {
+        case NODE_ROOT: {
             node_t* child = node->children;
             while (child) {
                 node_to_html(child, file);
@@ -17,19 +17,40 @@ void node_to_html(node_t* node, FILE* file) {
             }
         } break;
         
-        case ELEMENT_HEADER: {
+        case NODE_HEADER: {
             // For now, let's assume header can only have a single inner_text
             node_t* inner_text = node->children;
 
             fprintf(file,
-            "<h%d id=\"%s\">%s</h%d>",
-            node->element.depth,
-            slugify(inner_text->element.value),
-            inner_text->element.value,
-            node->element.depth);
+            "<h%d id=\"%s\">%.*s</h%d>",
+            node->depth,
+            slugifyn((char*)inner_text->value.data, inner_text->value.length),
+            (int)inner_text->value.length,
+            inner_text->value.data,
+            node->depth);
+        } break;
+
+        case NODE_UNORDERED_LIST: {
+            fprintf(file, "<ul>");
+            node_t* child = node->children;
+            while (child) {
+                node_to_html(child, file);
+                child = child->next;
+            }
+            fprintf(file, "</ul>");
         } break;
         
-        case ELEMENT_PARAGRAPH: {
+        case NODE_LIST_ITEM: {
+            fprintf(file, "<li>");
+            node_t* child = node->children;
+            while (child) {
+                node_to_html(child, file);
+                child = child->next;
+            }
+            fprintf(file, "</li>");
+        } break;
+
+        case NODE_PARAGRAPH: {
             fprintf(file, "<p>");
             node_t* child = node->children;
             while (child) {
@@ -39,14 +60,16 @@ void node_to_html(node_t* node, FILE* file) {
             fprintf(file, "</p>");
         } break;
 
-        case ELEMENT_LINE_BREAK: {
+        case NODE_LINEBREAK: {
             fprintf(file, "<br>");
         } break;
 
-        case ELEMENT_EMPHASIS: {
+        case NODE_ITALIC: 
+        case NODE_BOLD:
+        case NODE_ITALIC_BOLD: {
             char* open_tag;
             char* close_tag;
-            switch (node->element.depth) {
+            switch (node->depth) {
                 // italic
                 case 1: {
                     const char open[] = "<em>";
@@ -82,8 +105,8 @@ void node_to_html(node_t* node, FILE* file) {
             free(close_tag);
         } break;
 
-        case ELEMENT_INNER_TEXT: {
-            fprintf(file, "%s", node->element.value);
+        case NODE_INNER_TEXT: {
+            fprintf(file, "%.*s", (int)node->value.length, node->value.data);
 
             node_t* child = node->children;
             while (child) {
@@ -93,7 +116,7 @@ void node_to_html(node_t* node, FILE* file) {
         } break;
 
         default:
-            fprintf(stderr, "Unknown node type: %d\n", node->element.type);
+            fprintf(stderr, "Unknown node type: %d\n", node->type);
         break;
     }
 }
@@ -124,18 +147,10 @@ void generate_html(node_t* root, const char* out_file, const char* title, const 
     fclose(file);
 }
 
-char* slugify(char* input) {
-    // Hello, World! -> hello-world
+char* slugifyn(char* input, u64 length) {
+    // Same as the other one, except for strings
+    // that do not have null terminators.
     
-    // Currently, this functions wastes a bit of memory,
-    // because it allocates memory equal to source string's length,
-    // but then skips some characters, hence doesn't always use
-    // all the allocated memory.
-
-    i64 length = 0;
-    // strlen
-    while (input[length++] != '\0');
-
     // Allocate memory for output string
     char* out_str = malloc(length + 1);
     if (out_str == nullptr) {
@@ -144,7 +159,7 @@ char* slugify(char* input) {
     }
 
     i64 o = 0;
-    for (i64 i = 0; i < length; ++i) {
+    for (u64 i = 0; i < length; ++i) {
         // Uppercase characters
         if (input[i] >= 'A' && input[i] <= 'Z') {
             // Shift them to the lower case counterpart

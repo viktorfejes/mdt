@@ -10,9 +10,9 @@ FOR /R src/ %%f in (*.c) do (
 
 ECHO "Files:" %cFilenames%
 
-SET assembly=resumator
+SET assembly=mdt
 SET ext=exe
-SET cFLAGS=-g3 -Wall -Wextra -Werror -fsanitize=undefined -fsanitize-trap -Wno-unused-variable -Wno-unused-parameter
+SET cFLAGS=-g3 -Wall -Wextra -Werror -fsanitize=undefined -fsanitize-trap -pedantic
 SET iFLAGS=-Isrc/
 SET lFLAGS=-fuse-ld=lld -Wl,--pdb=
 SET DEFINES=-DDEBUG
